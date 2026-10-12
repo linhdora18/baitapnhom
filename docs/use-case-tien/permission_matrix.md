@@ -17,11 +17,11 @@ Viết tắt vai trò: **SA** = Platform Super Administrator, **BA** = Brand Adm
 
 ## Nguyên tắc chung
 
-1. **Mọi quyền của BA, OM, TE, IS bị giới hạn trong tenant (brand) của người dùng** và trong phạm vi địa điểm / máy được giao. Không ai truy cập được dữ liệu của brand khác
-2. Chỉ **SA** có báo cáo và giám sát toàn nền tảng (mục 15 trong đề tài)
-3. **CU không có tài khoản**; chỉ tương tác với máy đang dùng
-4. Mọi thao tác ghi (C, U, D, X) trong bảng dưới đây đều **ghi vào audit log** (mục 16 trong đề tào)
-5. Quyền có thể được BA chỉnh theo vai trò, địa điểm, máy (mục 7 trong đề tài). Bảng dưới là **quyền mặc định**.
+1. Mọi quyền của BA, OM, TE, IS bị giới hạn trong tenant (brand) của người dùng và trong phạm vi địa điểm / máy được giao. Không ai truy cập được dữ liệu của brand khác
+2. Chỉ SA có báo cáo và giám sát toàn nền tảng (mục 15 trong đề tài)
+3. CU không có tài khoản, chỉ tương tác với máy đang dùng
+4. Mọi thao tác ghi (C, U, D, X) trong bảng dưới đây đều ghi vào audit log (mục 16 trong đề tài)
+5. Quyền có thể được BA chỉnh theo vai trò, địa điểm, máy (mục 7 trong đề tài). Bảng dưới là quyền mặc định
 
 ## 1. Nền tảng và tài khoản
 
@@ -93,7 +93,7 @@ Viết tắt vai trò: **SA** = Platform Super Administrator, **BA** = Brand Adm
 
 ## Use case do hệ thống bên ngoài kích hoạt (không phân quyền theo vai trò)
 
-Các use case sau do Payment Provider hoặc IoT Device thực hiện, không thuộc ma trận vai trò. Chúng được bảo vệ bằng **xác thực hệ thống** (chữ ký webhook, định danh và thu hồi thiết bị) thay vì RBAC:
+Các use case sau do Payment Provider hoặc IoT Device thực hiện, không thuộc ma trận vai trò. Chúng được bảo vệ bằng xác thực hệ thống (chữ ký webhook, định danh và thu hồi thiết bị) thay vì RBAC:
 
 | UC | Tên | Actor | Cơ chế bảo vệ |
 |---|---|---|---|
