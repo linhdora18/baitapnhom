@@ -1,118 +1,115 @@
-=====================================================================
--- PHẦN 5: THIẾT KẾ LUỒNG ĐĂNG NHẬP, XÁC THỰC, PHÂN QUYỀN CHI TIẾT 
--- VÀ QUẢN TRỊ THƯƠNG HIỆU, RÀ SOÁT VÀ KIỂM THỬ SQL/QUYỀN TENANT (SQLite)
 -- =====================================================================
-
-/*
-====================================================================
-5.1. Thiết kế luồng đăng nhập và xác thực (Authentication Flow)
-- Quản lý tài khoản (users): Lưu định danh, mật khẩu băm, trạng thái, 
-  kiểm soát số lần sai (failed_attempts), khóa tạm (locked_until).
-- Lịch sử đăng nhập (login_attempts): Ghi nhận vết xác thực (thành công/thất bại, IP).
-- Phiên làm việc (sessions): Quản lý refresh token (family_id, refresh_hash), 
-  thời hạn, và thông tin thiết bị.
-
-5.2. Thiết kế phân quyền chi tiết (RBAC & Scopes)
-- permissions: Danh mục quyền hệ thống.
-- roles: Vai trò hệ thống hoặc vai trò theo từng brand.
-- role_permissions: Ánh xạ quyền cho vai trò.
-- user_roles: Gán vai trò cho người dùng theo phạm vi (tenant, location, machine).
-
-5.3. Quản trị thương hiệu (Tenant Administration)
-- tenants: Quản lý thông tin brand, trạng thái, cấu hình giao diện kiosk dạng text/JSON.
-
-5.4. Kiểm thử SQL / Quyền Tenant trên SQLite
-- Cách ly dữ liệu thương hiệu: Thực thi ở tầng ứng dụng qua tenantrepo (do SQLite không hỗ trợ RLS).
-- Khóa ngoại kép (tenant_id, id) ngăn chặn liên kết chéo dữ liệu.
-- audit_logs: Thiết lập cơ chế chỉ ghi thêm (append-only) bằng SQLite Trigger (UPDATE/DELETE).
-====================================================================
-*/
+-- SCENTSTATION - PHẦN 5: XÁC THỰC, RBAC VÀ KIỂM THỬ (5 SLOTS / 5 BRANDS)
+-- Hệ thống Kiosk Nước Hoa Đa Thuê Bao (Multi-Tenant)
+-- Brands: Chanel (Slot 1), YSL (Slot 2), Dior (Slot 3), Gucci (Slot 4), Hermès (Slot 5)
+-- =====================================================================
 
 PRAGMA foreign_keys = ON;
 
--- 1. Bảng tenants (Quản lý đối tác thương hiệu)
+-- 1. BẢNG TENANTS (Quản lý các thương hiệu nước hoa trên Kiosk)
 CREATE TABLE IF NOT EXISTS tenants (
-  id TEXT PRIMARY KEY,
-  code TEXT NOT NULL UNIQUE,
-  name TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended')),
-  logo_url TEXT, description TEXT, contact_email TEXT, contact_phone TEXT,
-  kiosk_display TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    id TEXT PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    status TEXT CHECK(status IN ('active', 'suspended', 'inactive')) DEFAULT 'active',
+    logo_url TEXT,
+    description TEXT,
+    kiosk_display TEXT, -- JSON cấu hình vị trí Slot trên Kiosk (ví dụ: {"slot_position": 1})
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Bảng permissions (Danh mục quyền hạn)
-CREATE TABLE IF NOT EXISTS permissions (
-  code TEXT PRIMARY KEY, 
-  level TEXT NOT NULL CHECK (level IN ('platform','tenant')), 
-  description TEXT NOT NULL
-);
-
--- 3. Bảng roles (Quản lý vai trò)
+-- 2. BẢNG ROLES (Phân quyền người dùng - RBAC)
 CREATE TABLE IF NOT EXISTS roles (
-  id TEXT PRIMARY KEY,
-  tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
-  code TEXT NOT NULL, name TEXT NOT NULL,
-  level TEXT NOT NULL CHECK (level IN ('platform','tenant')),
-  is_system INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  CHECK ((tenant_id IS NULL) = (is_system = 1))
-);
-CREATE UNIQUE INDEX IF NOT EXISTS roles_code_uq ON roles (IFNULL(tenant_id,''), code);
-
--- 4. Bảng role_permissions (Phân quyền chi tiết cho vai trò)
-CREATE TABLE IF NOT EXISTS role_permissions (
-  role_id TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-  permission_code TEXT NOT NULL REFERENCES permissions(code),
-  PRIMARY KEY (role_id, permission_code)
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    level TEXT CHECK(level IN ('system', 'tenant')) NOT NULL,
+    is_system INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
 );
 
--- 5. Bảng users (Quản lý tài khoản người dùng)
+-- 3. BẢNG USERS (Tài khoản người dùng)
 CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY,
-  tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
-  email TEXT NOT NULL, password_hash TEXT NOT NULL, full_name TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive','locked')),
-  failed_attempts INTEGER NOT NULL DEFAULT 0, locked_until TEXT,
-  must_change_password INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-  UNIQUE (tenant_id, id)
-);
-CREATE UNIQUE INDEX IF NOT EXISTS users_email_uq ON users (LOWER(email));
-
--- 6. Bảng sessions (Quản lý phiên làm việc)
-CREATE TABLE IF NOT EXISTS sessions (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  tenant_id TEXT REFERENCES tenants(id) ON DELETE CASCADE,
-  family_id TEXT NOT NULL,
-  refresh_hash TEXT NOT NULL UNIQUE,
-  expires_at TEXT NOT NULL, revoked_at TEXT, revoke_reason TEXT,
-  ip TEXT, user_agent TEXT, created_at TEXT NOT NULL
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    full_name TEXT NOT NULL,
+    status TEXT CHECK(status IN ('active', 'inactive', 'locked')) DEFAULT 'active',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL
 );
 
--- 7. Bảng login_attempts (Lịch sử đăng nhập)
-CREATE TABLE IF NOT EXISTS login_attempts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  email TEXT NOT NULL, user_id TEXT, tenant_id TEXT,
-  success INTEGER NOT NULL, reason TEXT, ip TEXT, created_at TEXT NOT NULL
+-- 4. BẢNG USER_ROLES (Gán vai trò cho người dùng)
+CREATE TABLE IF NOT EXISTS user_roles (
+    user_id TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, role_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
 );
 
--- 8. Bảng audit_logs (Nhật ký kiểm toán)
+-- 5. BẢNG AUDIT_LOGS (Nhật ký kiểm toán hệ thống - Append-only)
 CREATE TABLE IF NOT EXISTS audit_logs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  tenant_id TEXT, actor_id TEXT, actor_email TEXT,
-  action TEXT NOT NULL, target_type TEXT, target_id TEXT,
-  before_data TEXT, after_data TEXT,
-  severity TEXT NOT NULL DEFAULT 'info' CHECK (severity IN ('info','warning','critical')),
-  source_ip TEXT, created_at TEXT NOT NULL
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id TEXT,
+    user_id TEXT,
+    action TEXT NOT NULL,
+    target_table TEXT NOT NULL,
+    record_id TEXT,
+    old_values TEXT,
+    new_values TEXT,
+    ip_address TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX IF NOT EXISTS audit_tenant_time_idx ON audit_logs (tenant_id, created_at);
 
--- Trigger bảo vệ audit_logs (Chỉ cho phép ghi thêm, cấm Sửa/Xóa trên SQLite)
-CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit_logs
-  BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only'); END;
+-- ---------------------------------------------------------------------
+-- TRIGGER BẢO VỆ NHẬT KÝ AUDIT LOGS (Chống sửa/xóa nhật ký)
+-- ---------------------------------------------------------------------
+CREATE TRIGGER IF NOT EXISTS prevent_audit_log_update
+BEFORE UPDATE ON audit_logs
+BEGIN
+    SELECT RAISE(FAIL, 'Lỗi bảo mật: Không được phép chỉnh sửa dữ liệu Audit Log!');
+END;
 
-CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit_logs
-  BEGIN SELECT RAISE(ABORT, 'audit_logs is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS prevent_audit_log_delete
+BEFORE DELETE ON audit_logs
+BEGIN
+    SELECT RAISE(FAIL, 'Lỗi bảo mật: Không được phép xóa dữ liệu Audit Log!');
+END;
 
+-- =====================================================================
+-- NẠP DỮ LIỆU MẪU: 5 BRAND NƯỚC HOA TƯƠNG ỨNG 5 SLOTS KIOSK
+-- =====================================================================
+
+-- Thêm 5 Brand (Slot 1 đến Slot 5)
+INSERT OR REPLACE INTO tenants (id, code, name, status, logo_url, description, kiosk_display) 
+VALUES 
+('tenant_chanel', 'CHANEL', 'Chanel Paris', 'active', 'https://example.com/logos/chanel.png', 'Thương hiệu nước hoa Chanel', '{"slot_position": 1}'),
+('tenant_ysl',    'YSL',    'Yves Saint Laurent', 'active', 'https://example.com/logos/ysl.png', 'Thương hiệu nước hoa YSL', '{"slot_position": 2}'),
+('tenant_dior',   'DIOR',   'Christian Dior', 'active', 'https://example.com/logos/dior.png', 'Thương hiệu nước hoa Dior', '{"slot_position": 3}'),
+('tenant_gucci',  'GUCCI',  'Gucci', 'active', 'https://example.com/logos/gucci.png', 'Thương hiệu nước hoa Gucci', '{"slot_position": 4}'),
+('tenant_hermes', 'HERMES', 'Hermès', 'active', 'https://example.com/logos/hermes.png', 'Thương hiệu nước hoa Hermès', '{"slot_position": 5}');
+
+-- Thêm Vai trò Tenant Admin cho 5 Brand
+INSERT OR REPLACE INTO roles (id, tenant_id, code, name, level, is_system)
+VALUES 
+('role_admin_chanel', 'tenant_chanel', 'TENANT_ADMIN', 'Quản trị viên Chanel', 'tenant', 0),
+('role_admin_ysl',    'tenant_ysl',    'TENANT_ADMIN', 'Quản trị viên YSL', 'tenant', 0),
+('role_admin_dior',   'tenant_dior',   'TENANT_ADMIN', 'Quản trị viên Dior', 'tenant', 0),
+('role_admin_gucci',  'tenant_gucci',  'TENANT_ADMIN', 'Quản trị viên Gucci', 'tenant', 0),
+('role_admin_hermes', 'tenant_hermes', 'TENANT_ADMIN', 'Quản trị viên Hermès', 'tenant', 0);
+
+-- Thêm tài khoản Quản lý cho từng Brand
+INSERT OR REPLACE INTO users (id, tenant_id, email, password_hash, full_name, status)
+VALUES 
+('usr_chanel', 'tenant_chanel', 'admin@chanel.com', '$2b$10$abcdefghijklmnopqrstuvwxyz123456789012345678901234567', 'Chanel Manager', 'active'),
+('usr_ysl',    'tenant_ysl',    'admin@ysl.com',    '$2b$10$abcdefghijklmnopqrstuvwxyz123456789012345678901234567', 'YSL Manager', 'active'),
+('usr_dior',   'tenant_dior',   'admin@dior.com',   '$2b$10$abcdefghijklmnopqrstuvwxyz123456789012345678901234567', 'Dior Manager', 'active'),
+('usr_gucci',  'tenant_gucci',  'admin@gucci.com',  '$2b$10$abcdefghijklmnopqrstuvwxyz123456789012345678901234567', 'Gucci Manager', 'active'),
+('usr_hermes', 'tenant_hermes', 'admin@hermes.com', '$2b$10$abcdefghijklmnopqrstuvwxyz123456789012345678901234567', 'Hermes Manager', 'active');
