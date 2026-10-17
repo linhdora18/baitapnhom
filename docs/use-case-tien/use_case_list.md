@@ -1,4 +1,3 @@
-# ĐẶC TẢ CÁC USE CASE
 # ĐẶC TẢ CÁC USE CASE (13 use case chi tiết)
 
 ## 1. UC-01 Đăng nhập
