@@ -1,0 +1,71 @@
+#include <iostream>
+#include <string>
+
+using namespace std;
+
+// Các hàm giả lập kiểm tra
+bool daTuongChayLenh(string maLenh) {
+    return false;
+}
+
+long layThoiGianHienTai() {
+    return 1000;
+}
+
+bool kiemTraCuaDangMo() {
+    return false;
+}
+
+void guiPhanHoiCapTren(string maLenh, string trangThai, string thongBao) {
+    cout << "[" << trangThai << "] " << thongBao << endl;
+}
+
+void luuMaLenhDaChay(string maLenh) {
+    cout << "Da ghi nho ma lenh: " << maLenh << endl;
+}
+
+void batVanXit(int viTriSlot) {
+    cout << "Bat van xit slot " << viTriSlot << endl;
+}
+
+void tatVanXit(int viTriSlot) {
+    cout << "Tat van xit slot " << viTriSlot << endl;
+}
+
+// Hàm xử lý chính
+void xuLyLenhXit(string maLenh, int viTriSlot, int thoiGianXitMs, long thoiHanLenh) {
+
+    // 1. Chống xịt trùng
+    if (daTuongChayLenh(maLenh)) {
+        guiPhanHoiCapTren(maLenh, "DA_XIT_TROI", "Lenh nay da duoc thuc thi truoc do.");
+        return;
+    }
+
+    // 2. Kiểm tra thời hạn
+    if (layThoiGianHienTai() > thoiHanLenh) {
+        guiPhanHoiCapTren(maLenh, "QUAN_THOI_HAN", "Lenh da het han do su co mang.");
+        return;
+    }
+
+    // 3. Kiểm tra an toàn
+    if (kiemTraCuaDangMo()) {
+        guiPhanHoiCapTren(maLenh, "LOI_AN_TOAN", "Cua may dang mo, khong the xit.");
+        return;
+    }
+
+    // 4. Tiến hành xịt
+    luuMaLenhDaChay(maLenh);
+    guiPhanHoiCapTren(maLenh, "DANG_XIT", "May bat dau kich hoat van.");
+
+    batVanXit(viTriSlot);
+    tatVanXit(viTriSlot);
+
+    // 5. Báo cáo hoàn tất
+    guiPhanHoiCapTren(maLenh, "THANH_CONG", "Da xit xong an toan.");
+}
+
+// Hàm main - Bắt buộc phải có để chương trình chạy
+int main() {
+    xuLyLenhXit("CMD_12345", 2, 350, 2000);
+    return 0;
+}
