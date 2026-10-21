@@ -24,7 +24,7 @@
 Create EXTENSION if not exists pgcrypto;
 
 Do $$ begin
-    if not exists (select from pg_roles where rolename = 'scent_app') THEN
+    if not exists (select from pg_roles where rolname = 'scent_app') THEN
         create role scent_app login password 'change-me';
     end if;
 end$$;
@@ -33,7 +33,7 @@ create or replace function app_tenant_id() returns uuid language sql stable as
 $$select nullif(current_setting('app.tenant_id', true), '')::uuid $$;
 
 
-create or replace function app_bypass() return boolean language sql stable as 
+create or replace function app_bypass() returns boolean language sql stable as 
 $$select coalesce(current_setting('app.bypass', true), 'off') = 'on' $$;
 
 
@@ -120,7 +120,7 @@ create table user_roles(
     id         uuid primary key default gen_random_uuid(),
     tenant_id  uuid references tenants(id) on delete cascade,
     user_id    uuid not null,
-    role_id    uuid not null references roles(id) on delete cascade,\
+    role_id    uuid not null references roles(id) on delete cascade,
     scope_type text not null default 'tenant' check(scope_type in ('tenant', 'location', 'machine')),
     scope_id   uuid,
     created_at timestamptz not null default now(),
@@ -213,14 +213,13 @@ create trigger audit_no_update before update or delete on audit_logs
 for each row execute function audit_immutable();
 
 create trigger audit_no_delete before truncate on audit_logs 
-for each row execute function audit_immutable();
+for each statement execute function audit_immutable();
 
 -- row level security policies for multi-tenant isolation
 do $$
 declare t text;
 begin
     foreach t in array array ['users','locations','user_roles','products','sessions'] loop
-        execute format('alter table %I enable row level security', t);
         execute format('alter table %I enable row level security', t);
         execute format('alter table %I force row level security', t);
         execute format($p$ create policy tenant_isolation on %I
